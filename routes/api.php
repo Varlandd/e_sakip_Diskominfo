@@ -24,3 +24,4 @@ Route::put(
     '/pohon-kinerja/node/{level}/{id}',
     [PohonKinerjaController::class, 'updateNode']
 );
+Route::delete('/pohon-kinerja/node/{level}/{id}', [PohonKinerjaController::class, 'deleteNode']);

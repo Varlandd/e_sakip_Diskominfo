@@ -379,8 +379,15 @@ class PohonKinerjaController extends Controller
         }
     }
 
-    public function updateNode(Request $request, string $level, int $id)
+    public function updateNode(Request $request, string $level, string $id)
     {
+        if (!ctype_digit($id)) {
+            return response()->json([
+                'message' => 'ID node tidak valid.',
+            ], 422);
+        }
+
+        $id = (int) $id;
         $validated = $request->validate([
             'title' => ['required', 'string'],
             'indicator' => ['nullable', 'string'],
@@ -416,4 +423,85 @@ class PohonKinerjaController extends Controller
             'data' => $model->fresh(),
         ]);
     }
+
+    public function deleteNode(string $level, string $id)
+    {
+        if (!ctype_digit($id)) {
+            return response()->json([
+                'message' => 'ID node tidak valid.',
+            ], 422);
+        }
+
+        $id = (int) $id;
+        $level = strtoupper($level);
+
+        if ($level === 'ULTIMATE') {
+            return response()->json([
+                'message' => 'Node Ultimate tidak dapat dihapus melalui fitur ini.',
+            ], 422);
+        }
+
+        try {
+            DB::transaction(function () use ($level, $id) {
+                switch ($level) {
+                    case 'INTERMEDIATE':
+                        $intermediate = Intermediate::find($id);
+
+                        if (!$intermediate) {
+                            abort(404, 'Node Intermediate tidak ditemukan.');
+                        }
+
+                        // Hapus semua output yang berada di bawah immediate
+                        // milik intermediate ini terlebih dahulu.
+                        $immediates = Immediate::where('intermediate_id', $intermediate->id)->get();
+
+                        foreach ($immediates as $immediate) {
+                            Output::where('immediate_id', $immediate->id)->delete();
+                        }
+
+                        // Hapus semua immediate di bawah intermediate.
+                        Immediate::where('intermediate_id', $intermediate->id)->delete();
+
+                        // Terakhir hapus intermediate.
+                        $intermediate->delete();
+                        break;
+
+                    case 'IMMEDIATE':
+                        $immediate = Immediate::find($id);
+
+                        if (!$immediate) {
+                            abort(404, 'Node Immediate tidak ditemukan.');
+                        }
+
+                        // Hapus semua output yang berada di bawah immediate.
+                        Output::where('immediate_id', $immediate->id)->delete();
+                        $immediate->delete();
+                        break;
+
+                    case 'OUTPUT':
+                        $output = Output::find($id);
+
+                        if (!$output) {
+                            abort(404, 'Node Output tidak ditemukan.');
+                        }
+
+                        $output->delete();
+                        break;
+
+                    default:
+                        abort(422, 'Level node tidak valid.');
+                }
+            });
+
+            return response()->json([
+                'message' => 'Node berhasil dihapus dari database.',
+            ]);
+        } catch (\Throwable $e) {
+            return response()->json([
+                'message' => 'Gagal menghapus node.',
+                'error' => $e->getMessage(),
+            ], 500);
+        }
+    }
+
 }
