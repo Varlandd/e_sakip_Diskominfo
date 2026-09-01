@@ -504,4 +504,507 @@ class PohonKinerjaController extends Controller
         }
     }
 
+    public function getYears()
+    {
+        try {
+            $years = PohonKinerja::distinct()
+                ->orderBy('tahun', 'desc')
+                ->pluck('tahun')
+                ->toArray();
+
+            return response()->json([
+                'message' => 'Tahun berhasil diambil.',
+                'data' => $years,
+            ], 200);
+        } catch (\Throwable $e) {
+            return response()->json([
+                'message' => 'Gagal mengambil tahun.',
+                'error' => $e->getMessage(),
+            ], 500);
+        }
+    }
+
+    public function checkYearExists(int $tahun)
+    {
+        try {
+            $exists = PohonKinerja::where('tahun', $tahun)->exists();
+
+            return response()->json([
+                'message' => 'Status tahun berhasil diambil.',
+                'data' => [
+                    'tahun' => $tahun,
+                    'exists' => $exists,
+                ],
+            ], 200);
+        } catch (\Throwable $e) {
+            return response()->json([
+                'message' => 'Gagal mengecek tahun.',
+                'error' => $e->getMessage(),
+            ], 500);
+        }
+    }
+
+    public function archive(string $id)
+    {
+        try {
+            $pohonKinerja = PohonKinerja::find($id);
+
+            if (!$pohonKinerja) {
+                return response()->json([
+                    'message' => 'Pohon kinerja tidak ditemukan.',
+                ], 404);
+            }
+
+            if ($pohonKinerja->is_archived) {
+                return response()->json([
+                    'message' => 'Pohon kinerja sudah diarsipkan.',
+                ], 422);
+            }
+
+            $pohonKinerja->archive();
+
+            return response()->json([
+                'message' => 'Pohon kinerja tahun ' . $pohonKinerja->tahun . ' berhasil diarsipkan.',
+                'data' => [
+                    'id' => $pohonKinerja->id,
+                    'tahun' => $pohonKinerja->tahun,
+                    'unit_kerja' => $pohonKinerja->unit_kerja,
+                    'is_archived' => $pohonKinerja->is_archived,
+                    'archived_at' => $pohonKinerja->archived_at,
+                ],
+            ], 200);
+        } catch (\Throwable $e) {
+            return response()->json([
+                'message' => 'Gagal mengarsipkan pohon kinerja.',
+                'error' => $e->getMessage(),
+            ], 500);
+        }
+    }
+
+    public function restore(string $id)
+    {
+        try {
+            $pohonKinerja = PohonKinerja::find($id);
+
+            if (!$pohonKinerja) {
+                return response()->json([
+                    'message' => 'Pohon kinerja tidak ditemukan.',
+                ], 404);
+            }
+
+            if (!$pohonKinerja->is_archived) {
+                return response()->json([
+                    'message' => 'Pohon kinerja bukan data arsipan.',
+                ], 422);
+            }
+
+            $pohonKinerja->restore();
+
+            return response()->json([
+                'message' => 'Pohon kinerja tahun ' . $pohonKinerja->tahun . ' berhasil dipulihkan dari arsipan.',
+                'data' => [
+                    'id' => $pohonKinerja->id,
+                    'tahun' => $pohonKinerja->tahun,
+                    'unit_kerja' => $pohonKinerja->unit_kerja,
+                    'is_archived' => $pohonKinerja->is_archived,
+                    'archived_at' => $pohonKinerja->archived_at,
+                ],
+            ], 200);
+        } catch (\Throwable $e) {
+            return response()->json([
+                'message' => 'Gagal memulihkan pohon kinerja dari arsipan.',
+                'error' => $e->getMessage(),
+            ], 500);
+        }
+    }
+
+    public function getArchived()
+    {
+        try {
+            $archivedData = PohonKinerja::archived()
+                ->with('ultimates.intermediates.immediates.outputs')
+                ->orderBy('archived_at', 'desc')
+                ->get();
+
+            if ($archivedData->isEmpty()) {
+                return response()->json([
+                    'message' => 'Tidak ada data pohon kinerja yang diarsipkan.',
+                    'data' => [],
+                ], 200);
+            }
+
+            $formattedData = $archivedData->map(function ($pk) {
+                return [
+                    'id' => $pk->id,
+                    'tahun' => $pk->tahun,
+                    'unit_kerja' => $pk->unit_kerja,
+                    'is_archived' => $pk->is_archived,
+                    'archived_at' => $pk->archived_at,
+                    'total_ultimate' => $pk->ultimates->count(),
+                    'total_intermediate' => $pk->ultimates->sum(function ($u) {
+                        return $u->intermediates->count();
+                    }),
+                    'total_immediate' => $pk->ultimates->sum(function ($u) {
+                        return $u->intermediates->sum(function ($i) {
+                            return $i->immediates->count();
+                        });
+                    }),
+                    'total_output' => $pk->ultimates->sum(function ($u) {
+                        return $u->intermediates->sum(function ($i) {
+                            return $i->immediates->sum(function ($im) {
+                                return $im->outputs->count();
+                            });
+                        });
+                    }),
+                ];
+            });
+
+            return response()->json([
+                'message' => 'Data arsipan pohon kinerja berhasil diambil.',
+                'data' => $formattedData,
+            ], 200);
+        } catch (\Throwable $e) {
+            return response()->json([
+                'message' => 'Gagal mengambil data arsipan pohon kinerja.',
+                'error' => $e->getMessage(),
+            ], 500);
+        }
+    }
+
+    public function duplicate(Request $request)
+    {
+        $request->validate([
+            'tahun_baru' => ['required', 'integer', 'min:2000', 'max:2099'],
+            'unit_kerja' => ['required', 'string', 'max:255'],
+        ]);
+
+        try {
+            $tahunBaru = $request->input('tahun_baru');
+            $unitKerja = $request->input('unit_kerja');
+            $tahunLama = $tahunBaru - 1;
+
+            // Check if new year already exists
+            $existingPohon = PohonKinerja::where('tahun', $tahunBaru)->first();
+            if ($existingPohon) {
+                return response()->json([
+                    'message' => 'Pohon kinerja tahun ' . $tahunBaru . ' sudah ada.',
+                ], 422);
+            }
+
+            // Get source pohon kinerja from previous year
+            $sourcePonoKinerja = PohonKinerja::where('tahun', $tahunLama)
+                ->with('ultimates.intermediates.immediates.outputs')
+                ->first();
+
+            if (!$sourcePonoKinerja) {
+                return response()->json([
+                    'message' => 'Pohon kinerja tahun ' . $tahunLama . ' tidak ditemukan untuk dijadikan template.',
+                ], 404);
+            }
+
+            $result = DB::transaction(function () use ($tahunBaru, $unitKerja, $sourcePonoKinerja) {
+                // Create new pohon kinerja
+                $newPohonKinerja = PohonKinerja::create([
+                    'tahun' => $tahunBaru,
+                    'unit_kerja' => $unitKerja,
+                    'is_archived' => false,
+                    'archived_at' => null,
+                ]);
+
+                $totalUltimate = 0;
+                $totalIntermediate = 0;
+                $totalImmediate = 0;
+                $totalOutput = 0;
+
+                // Map old to new IDs for relationships
+                $ultimateMap = []; // oldId => newId
+                $intermediateMap = [];
+                $immediateMap = [];
+
+                // Duplicate ultimates
+                foreach ($sourcePonoKinerja->ultimates as $oldUltimate) {
+                    $newUltimate = Ultimate::create([
+                        'pohon_kinerja_id' => $newPohonKinerja->id,
+                        'ultimate' => $oldUltimate->ultimate,
+                        'tujuan_ultimate' => $oldUltimate->tujuan_ultimate,
+                        'indikator_ultimate' => $oldUltimate->indikator_ultimate,
+                        'target_satuan_ultimate' => $oldUltimate->target_satuan_ultimate,
+                    ]);
+                    $ultimateMap[$oldUltimate->id] = $newUltimate->id;
+                    $totalUltimate++;
+
+                    // Duplicate intermediates
+                    foreach ($oldUltimate->intermediates as $oldIntermediate) {
+                        $newIntermediate = Intermediate::create([
+                            'ultimate_id' => $newUltimate->id,
+                            'intermediate' => $oldIntermediate->intermediate,
+                            'sasaran' => $oldIntermediate->sasaran,
+                            'indikator_sasaran' => $oldIntermediate->indikator_sasaran,
+                            'target_satuan_intermediate' => $oldIntermediate->target_satuan_intermediate,
+                        ]);
+                        $intermediateMap[$oldIntermediate->id] = $newIntermediate->id;
+                        $totalIntermediate++;
+
+                        // Duplicate immediates
+                        foreach ($oldIntermediate->immediates as $oldImmediate) {
+                            $newImmediate = Immediate::create([
+                                'intermediate_id' => $newIntermediate->id,
+                                'immediate' => $oldImmediate->immediate,
+                                'program_immediate' => $oldImmediate->program_immediate,
+                                'nomenklatur_sipd_immediate' => $oldImmediate->nomenklatur_sipd_immediate,
+                                'indikator_immediate' => $oldImmediate->indikator_immediate,
+                                'target_satuan_immediate' => $oldImmediate->target_satuan_immediate,
+                            ]);
+                            $immediateMap[$oldImmediate->id] = $newImmediate->id;
+                            $totalImmediate++;
+
+                            // Duplicate outputs
+                            foreach ($oldImmediate->outputs as $oldOutput) {
+                                Output::create([
+                                    'immediate_id' => $newImmediate->id,
+                                    'output' => $oldOutput->output,
+                                    'kegiatan_output' => $oldOutput->kegiatan_output,
+                                    'nomenklatur_sipd_output' => $oldOutput->nomenklatur_sipd_output,
+                                    'indikator_output' => $oldOutput->indikator_output,
+                                    'target_satuan_output' => $oldOutput->target_satuan_output,
+                                    'input_output' => $oldOutput->input_output,
+                                    'sub_kegiatan_output' => $oldOutput->sub_kegiatan_output,
+                                    'nomenklatur_sipd_sub_kegiatan_output' => $oldOutput->nomenklatur_sipd_sub_kegiatan_output,
+                                    'indikator_sub_kegiatan_output' => $oldOutput->indikator_sub_kegiatan_output,
+                                    'target_satuan_sub_kegiatan_output' => $oldOutput->target_satuan_sub_kegiatan_output,
+                                ]);
+                                $totalOutput++;
+                            }
+                        }
+                    }
+                }
+
+                return [
+                    'pohon_kinerja_id' => $newPohonKinerja->id,
+                    'tahun' => $newPohonKinerja->tahun,
+                    'unit_kerja' => $newPohonKinerja->unit_kerja,
+                    'total_ultimate' => $totalUltimate,
+                    'total_intermediate' => $totalIntermediate,
+                    'total_immediate' => $totalImmediate,
+                    'total_output' => $totalOutput,
+                ];
+            });
+
+            return response()->json([
+                'message' => 'Pohon kinerja tahun ' . $tahunBaru . ' berhasil dibuat dari template tahun ' . $tahunLama . '.',
+                'data' => $result,
+            ], 201);
+        } catch (\Throwable $e) {
+            return response()->json([
+                'message' => 'Gagal menduplikasi pohon kinerja.',
+                'error' => $e->getMessage(),
+            ], 500);
+        }
+    }
+
+    public function createNode(Request $request)
+    {
+        $validated = $request->validate([
+            'level' => ['required', 'string', 'in:ULTIMATE,INTERMEDIATE,IMMEDIATE,OUTPUT'],
+            'title' => ['required', 'string'],
+            'indicator' => ['nullable', 'string'],
+
+            // ID induk
+            'pohon_kinerja_id' => ['nullable', 'integer', 'exists:pohon_kinerja,id'],
+            'parent_id' => ['nullable', 'integer'],
+        ]);
+
+        try {
+            $level = strtoupper($validated['level']);
+            $title = trim($validated['title']);
+            $indicator = $validated['indicator'] ?? null;
+
+            /*
+            * ULTIMATE
+            * Tidak mempunyai parent.
+            * Membutuhkan pohon_kinerja_id.
+            */
+            if ($level === 'ULTIMATE') {
+                if (empty($validated['pohon_kinerja_id'])) {
+                    return response()->json([
+                        'message' => 'Pohon Kinerja ID wajib diisi untuk node Ultimate.'
+                    ], 422);
+                }
+
+                $pohonKinerja = PohonKinerja::find(
+                    $validated['pohon_kinerja_id']
+                );
+
+                if (!$pohonKinerja) {
+                    return response()->json([
+                        'message' => 'Pohon kinerja tidak ditemukan.'
+                    ], 404);
+                }
+
+                if ($pohonKinerja->is_archived) {
+                    return response()->json([
+                        'message' => 'Pohon kinerja yang sudah diarsipkan tidak dapat diubah.'
+                    ], 422);
+                }
+
+                $node = Ultimate::create([
+                    'pohon_kinerja_id' => $pohonKinerja->id,
+                    'ultimate' => $title,
+                    'tujuan_ultimate' => '',
+                    'indikator_ultimate' => $indicator,
+                    'target_satuan_ultimate' => '',
+                ]);
+            }
+
+            /*
+            * INTERMEDIATE
+            * Parent = Ultimate
+            */
+            elseif ($level === 'INTERMEDIATE') {
+                if (empty($validated['parent_id'])) {
+                    return response()->json([
+                        'message' => 'Ultimate ID wajib diisi untuk node Intermediate.'
+                    ], 422);
+                }
+
+                $ultimate = Ultimate::find($validated['parent_id']);
+
+                if (!$ultimate) {
+                    return response()->json([
+                        'message' => 'Ultimate tidak ditemukan.'
+                    ], 404);
+                }
+
+                $pohonKinerja = PohonKinerja::find(
+                    $ultimate->pohon_kinerja_id
+                );
+
+                if (!$pohonKinerja || $pohonKinerja->is_archived) {
+                    return response()->json([
+                        'message' => 'Pohon kinerja tidak tersedia untuk diubah.'
+                    ], 422);
+                }
+
+                $node = Intermediate::create([
+                    'ultimate_id' => $ultimate->id,
+                    'intermediate' => '',
+                    'sasaran' => $title,
+                    'indikator_sasaran' => $indicator,
+                    'target_satuan_intermediate' => '',
+                ]);
+            }
+
+            /*
+            * IMMEDIATE
+            * Parent = Intermediate
+            */
+            elseif ($level === 'IMMEDIATE') {
+                if (empty($validated['parent_id'])) {
+                    return response()->json([
+                        'message' => 'Intermediate ID wajib diisi untuk node Immediate.'
+                    ], 422);
+                }
+
+                $intermediate = Intermediate::find(
+                    $validated['parent_id']
+                );
+
+                if (!$intermediate) {
+                    return response()->json([
+                        'message' => 'Intermediate tidak ditemukan.'
+                    ], 404);
+                }
+
+                $ultimate = Ultimate::find(
+                    $intermediate->ultimate_id
+                );
+
+                $pohonKinerja = $ultimate
+                    ? PohonKinerja::find($ultimate->pohon_kinerja_id)
+                    : null;
+
+                if (!$pohonKinerja || $pohonKinerja->is_archived) {
+                    return response()->json([
+                        'message' => 'Pohon kinerja tidak tersedia untuk diubah.'
+                    ], 422);
+                }
+
+                $node = Immediate::create([
+                    'intermediate_id' => $intermediate->id,
+                    'immediate' => $title,
+                    'program_immediate' => '',
+                    'nomenklatur_sipd_immediate' => '',
+                    'indikator_immediate' => $indicator,
+                    'target_satuan_immediate' => '',
+                ]);
+            }
+
+            /*
+            * OUTPUT
+            * Parent = Immediate
+            */
+            else {
+                if (empty($validated['parent_id'])) {
+                    return response()->json([
+                        'message' => 'Immediate ID wajib diisi untuk node Output.'
+                    ], 422);
+                }
+
+                $immediate = Immediate::find(
+                    $validated['parent_id']
+                );
+
+                if (!$immediate) {
+                    return response()->json([
+                        'message' => 'Immediate tidak ditemukan.'
+                    ], 404);
+                }
+
+                $intermediate = Intermediate::find(
+                    $immediate->intermediate_id
+                );
+
+                $ultimate = $intermediate
+                    ? Ultimate::find($intermediate->ultimate_id)
+                    : null;
+
+                $pohonKinerja = $ultimate
+                    ? PohonKinerja::find($ultimate->pohon_kinerja_id)
+                    : null;
+
+                if (!$pohonKinerja || $pohonKinerja->is_archived) {
+                    return response()->json([
+                        'message' => 'Pohon kinerja tidak tersedia untuk diubah.'
+                    ], 422);
+                }
+
+                $node = Output::create([
+                    'immediate_id' => $immediate->id,
+                    'output' => $title,
+                    'kegiatan_output' => '',
+                    'nomenklatur_sipd_output' => '',
+                    'indikator_output' => $indicator,
+                    'target_satuan_output' => '',
+                    'input_output' => '',
+                    'sub_kegiatan_output' => '',
+                    'nomenklatur_sipd_sub_kegiatan_output' => '',
+                    'indikator_sub_kegiatan_output' => '',
+                    'target_satuan_sub_kegiatan_output' => '',
+                ]);
+            }
+
+            return response()->json([
+                'message' => 'Node berhasil ditambahkan ke database.',
+                'data' => $node->fresh(),
+            ], 201);
+
+        } catch (\Throwable $e) {
+            return response()->json([
+                'message' => 'Gagal menambahkan node.',
+                'error' => $e->getMessage(),
+            ], 500);
+        }
+    }
+
 }
+
