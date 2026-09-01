@@ -321,4 +321,24 @@ class RenstraController extends Controller
             'message' => 'Data beserta seluruh turunannya berhasil dihapus.',
         ]);
     }
+
+    public function getYears()
+    {
+        try {
+            $years = PohonKinerja::distinct()
+                ->orderBy('tahun', 'desc')
+                ->pluck('tahun')
+                ->toArray();
+
+            return response()->json([
+                'message' => 'Tahun berhasil diambil.',
+                'data' => $years,
+            ], 200);
+        } catch (\Throwable $e) {
+            return response()->json([
+                'message' => 'Gagal mengambil tahun.',
+                'error' => $e->getMessage(),
+            ], 500);
+        }
+    }
 }

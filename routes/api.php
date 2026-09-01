@@ -21,6 +21,40 @@ Route::get(
     [PohonKinerjaController::class, 'getTree']
 );
 
+Route::get(
+    '/pohon-kinerja/years',
+    [PohonKinerjaController::class, 'getYears']
+);
+
+Route::get(
+    '/pohon-kinerja/check-year/{tahun}',
+    [PohonKinerjaController::class, 'checkYearExists']
+);
+
+Route::get(
+    '/pohon-kinerja/archived',
+    [PohonKinerjaController::class, 'getArchived']
+);
+
+Route::post(
+    '/pohon-kinerja/archive/{id}',
+    [PohonKinerjaController::class, 'archive']
+);
+
+Route::post(
+    '/pohon-kinerja/restore/{id}',
+    [PohonKinerjaController::class, 'restore']
+);
+
+Route::post(
+    '/pohon-kinerja/duplicate',
+    [PohonKinerjaController::class, 'duplicate']
+);
+Route::post(
+    '/pohon-kinerja/node',
+    [PohonKinerjaController::class, 'createNode']
+);
+
 Route::put(
     '/pohon-kinerja/node/{level}/{id}',
     [PohonKinerjaController::class, 'updateNode']
