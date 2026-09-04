@@ -22,6 +22,10 @@ Route::get(
 );
 
 Route::get(
+    '/pohon-kinerja/summary', 
+    [PohonKinerjaController::class, 'summary']);
+
+Route::get(
     '/pohon-kinerja/years',
     [PohonKinerjaController::class, 'getYears']
 );
@@ -50,6 +54,9 @@ Route::post(
     '/pohon-kinerja/duplicate',
     [PohonKinerjaController::class, 'duplicate']
 );
+Route::get(
+    '/pohon-kinerja/recent-activity', [PohonKinerjaController::class, 'recentActivity']);
+
 Route::post(
     '/pohon-kinerja/node',
     [PohonKinerjaController::class, 'createNode']

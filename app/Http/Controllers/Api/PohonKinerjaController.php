@@ -1006,5 +1006,113 @@ class PohonKinerjaController extends Controller
         }
     }
 
-}
+public function summary(Request $request)
+    {
+        try {
+            $tahun = $request->query('tahun', now()->year);
+ 
+            $pohonKinerja = PohonKinerja::where('tahun', $tahun)->first();
+ 
+            if (!$pohonKinerja) {
+                return response()->json([
+                    'message' => 'Data pohon kinerja untuk tahun tersebut belum tersedia.',
+                    'data' => [
+                        'tahun' => (int) $tahun,
+                        'ultimate' => 0,
+                        'intermediate' => 0,
+                        'immediate' => 0,
+                        'output' => 0,
+                    ],
+                ], 200);
+            }
+ 
+            $ultimateIds = Ultimate::where('pohon_kinerja_id', $pohonKinerja->id)->pluck('id');
+            $intermediateIds = Intermediate::whereIn('ultimate_id', $ultimateIds)->pluck('id');
+            $immediateIds = Immediate::whereIn('intermediate_id', $intermediateIds)->pluck('id');
+            $totalOutput = Output::whereIn('immediate_id', $immediateIds)->count();
+ 
+            return response()->json([
+                'message' => 'Ringkasan pohon kinerja berhasil diambil.',
+                'data' => [
+                    'pohon_kinerja_id' => $pohonKinerja->id,
+                    'tahun' => $pohonKinerja->tahun,
+                    'unit_kerja' => $pohonKinerja->unit_kerja,
+                    'ultimate' => $ultimateIds->count(),
+                    'intermediate' => $intermediateIds->count(),
+                    'immediate' => $immediateIds->count(),
+                    'output' => $totalOutput,
+                ],
+            ], 200);
+        } catch (\Throwable $e) {
+            return response()->json([
+                'message' => 'Gagal mengambil ringkasan pohon kinerja.',
+                'error' => $e->getMessage(),
+            ], 500);
+        }
+    }
+ 
+    /**
+     * Daftar node (Ultimate/Intermediate/Immediate/Output) yang
+     * paling baru diperbarui, untuk pohon kinerja tahun tertentu.
+     * Dipakai oleh dashboard sebagai "Aktivitas Terbaru".
+     *
+     * GET /api/pohon-kinerja/recent-activity?tahun=2026&limit=5
+     */
+    public function recentActivity(Request $request)
+    {
+        try {
+            $tahun = $request->query('tahun', now()->year);
+            $limit = (int) $request->query('limit', 5);
+ 
+            $pohonKinerja = PohonKinerja::where('tahun', $tahun)->first();
+ 
+            if (!$pohonKinerja) {
+                return response()->json([
+                    'message' => 'Data pohon kinerja untuk tahun tersebut belum tersedia.',
+                    'data' => [],
+                ], 200);
+            }
+ 
+            $ultimates = Ultimate::where('pohon_kinerja_id', $pohonKinerja->id)->get();
+            $intermediates = Intermediate::whereIn('ultimate_id', $ultimates->pluck('id'))->get();
+            $immediates = Immediate::whereIn('intermediate_id', $intermediates->pluck('id'))->get();
+            $outputs = Output::whereIn('immediate_id', $immediates->pluck('id'))->get();
+ 
+            $activities = collect()
+                ->concat($ultimates->map(fn ($item) => [
+                    'level' => 'ULTIMATE',
+                    'title' => $item->ultimate,
+                    'updated_at' => $item->updated_at,
+                ]))
+                ->concat($intermediates->map(fn ($item) => [
+                    'level' => 'INTERMEDIATE',
+                    'title' => $item->sasaran,
+                    'updated_at' => $item->updated_at,
+                ]))
+                ->concat($immediates->map(fn ($item) => [
+                    'level' => 'IMMEDIATE',
+                    'title' => $item->immediate,
+                    'updated_at' => $item->updated_at,
+                ]))
+                ->concat($outputs->map(fn ($item) => [
+                    'level' => 'OUTPUT',
+                    'title' => $item->output,
+                    'updated_at' => $item->updated_at,
+                ]))
+                ->sortByDesc('updated_at')
+                ->take($limit)
+                ->values();
+ 
+            return response()->json([
+                'message' => 'Aktivitas terbaru berhasil diambil.',
+                'data' => $activities,
+            ], 200);
+        } catch (\Throwable $e) {
+            return response()->json([
+                'message' => 'Gagal mengambil aktivitas terbaru.',
+                'error' => $e->getMessage(),
+            ], 500);
+        }
+    }
 
+}
