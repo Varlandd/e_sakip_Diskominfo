@@ -25,4 +25,9 @@ class Intermediate extends Model
     {
         return $this->hasMany(Immediate::class);
     }
+
+    public function capaians(): HasMany
+    {
+        return $this->hasMany(Capaian::class);
+    }
 }

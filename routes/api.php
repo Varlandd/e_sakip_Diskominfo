@@ -4,6 +4,7 @@ use Illuminate\Support\Facades\Route;
 use App\Http\Controllers\Api\AuthController;
 use App\Http\Controllers\Api\PohonKinerjaController;
 use App\Http\Controllers\Api\RenstraController;
+use App\Http\Controllers\Api\CapaianController;
 
 Route::get('/test', function () {
     return response()->json([
@@ -22,6 +23,11 @@ Route::post('/auth/login', [AuthController::class, 'login']);
 Route::middleware('auth:sanctum')->group(function () {
     Route::post('/auth/logout', [AuthController::class, 'logout']);
     Route::get('/auth/me', [AuthController::class, 'me']);
+
+    // Capaian Kinerja
+    Route::get('/capaian', [CapaianController::class, 'index']);
+    Route::post('/capaian', [CapaianController::class, 'store']);
+    Route::get('/capaian/summary', [CapaianController::class, 'summary']);
 });
 
 Route::post(
