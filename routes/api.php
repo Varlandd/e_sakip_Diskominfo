@@ -1,6 +1,7 @@
 <?php
 
 use Illuminate\Support\Facades\Route;
+use App\Http\Controllers\Api\AuthController;
 use App\Http\Controllers\Api\PohonKinerjaController;
 use App\Http\Controllers\Api\RenstraController;
 
@@ -9,6 +10,18 @@ Route::get('/test', function () {
         'success' => true,
         'message' => 'API E-SAKIP berhasil!'
     ]);
+});
+
+/*
+|--------------------------------------------------------------------------
+| Authentication
+|--------------------------------------------------------------------------
+*/
+Route::post('/auth/login', [AuthController::class, 'login']);
+
+Route::middleware('auth:sanctum')->group(function () {
+    Route::post('/auth/logout', [AuthController::class, 'logout']);
+    Route::get('/auth/me', [AuthController::class, 'me']);
 });
 
 Route::post(
