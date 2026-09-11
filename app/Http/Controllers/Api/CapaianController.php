@@ -33,8 +33,15 @@ class CapaianController extends Controller
         return [0, $targetSatuan];
     }
 
+    public const DAFTAR_PERIODE = [
+        1 => ['nama' => '3 Bulan Pertama', 'singkatan' => 'TW I', 'rentang' => 'Jan - Mar'],
+        2 => ['nama' => '3 Bulan Kedua', 'singkatan' => 'TW II', 'rentang' => 'Apr - Jun'],
+        3 => ['nama' => '3 Bulan Ketiga', 'singkatan' => 'TW III', 'rentang' => 'Jul - Sep'],
+        4 => ['nama' => '3 Bulan Keempat', 'singkatan' => 'TW IV', 'rentang' => 'Okt - Des'],
+    ];
+
     /**
-     * Get all intermediates with their monthly capaian data for a given year.
+     * Get all intermediates with their quarterly (per 3 bulan) capaian data for a given year.
      */
     public function index(Request $request)
     {
@@ -66,29 +73,38 @@ class CapaianController extends Controller
         $result = $intermediates->map(function ($intermediate) use ($tahun) {
             [$target, $satuan] = $this->parseTargetSatuan($intermediate->target_satuan_intermediate);
 
-            // Build monthly data (1-12)
+            // Build data 4 periode (per 3 bulan)
             $capaianMap = $intermediate->capaians->keyBy('bulan');
-            $capaianBulanan = [];
+            $capaianTriwulan = [];
             $totalRealisasi = 0;
-            $filledMonths = 0;
+            $filledPeriods = 0;
 
-            for ($bulan = 1; $bulan <= 12; $bulan++) {
-                if ($capaianMap->has($bulan)) {
-                    $c = $capaianMap[$bulan];
+            for ($p = 1; $p <= 4; $p++) {
+                $meta = self::DAFTAR_PERIODE[$p];
+                if ($capaianMap->has($p)) {
+                    $c = $capaianMap[$p];
                     $realisasi = (float) $c->realisasi;
                     $persentase = $target > 0 ? round(($realisasi / $target) * 100, 2) : 0;
                     $totalRealisasi += $realisasi;
-                    $filledMonths++;
+                    $filledPeriods++;
 
-                    $capaianBulanan[] = [
-                        'bulan' => $bulan,
+                    $capaianTriwulan[] = [
+                        'periode' => $p,
+                        'bulan' => $p,
+                        'nama' => $meta['nama'],
+                        'singkatan' => $meta['singkatan'],
+                        'rentang' => $meta['rentang'],
                         'realisasi' => $realisasi,
                         'persentase' => $persentase,
                         'keterangan' => $c->keterangan,
                     ];
                 } else {
-                    $capaianBulanan[] = [
-                        'bulan' => $bulan,
+                    $capaianTriwulan[] = [
+                        'periode' => $p,
+                        'bulan' => $p,
+                        'nama' => $meta['nama'],
+                        'singkatan' => $meta['singkatan'],
+                        'rentang' => $meta['rentang'],
                         'realisasi' => null,
                         'persentase' => null,
                         'keterangan' => null,
@@ -96,7 +112,7 @@ class CapaianController extends Controller
                 }
             }
 
-            $rataRata = $filledMonths > 0 && $target > 0
+            $rataRata = $filledPeriods > 0 && $target > 0
                 ? round(($totalRealisasi / $target) * 100, 2)
                 : 0;
 
@@ -107,7 +123,8 @@ class CapaianController extends Controller
                 'target' => $target,
                 'satuan' => $satuan,
                 'target_satuan_raw' => $intermediate->target_satuan_intermediate,
-                'capaian_bulanan' => $capaianBulanan,
+                'capaian_triwulan' => $capaianTriwulan,
+                'capaian_bulanan' => $capaianTriwulan,
                 'total_realisasi' => round($totalRealisasi, 2),
                 'rata_rata_persentase' => $rataRata,
             ];
@@ -124,17 +141,20 @@ class CapaianController extends Controller
     }
 
     /**
-     * Store or update a monthly capaian record (upsert).
+     * Store or update a quarterly (per 3 bulan) capaian record (upsert).
      */
     public function store(Request $request)
     {
         $validated = $request->validate([
             'intermediate_id' => ['required', 'integer', 'exists:intermediates,id'],
-            'bulan' => ['required', 'integer', 'min:1', 'max:12'],
+            'periode' => ['nullable', 'integer', 'min:1', 'max:4'],
+            'bulan' => ['nullable', 'integer', 'min:1', 'max:4'],
             'tahun' => ['required', 'integer', 'min:2000', 'max:2100'],
             'realisasi' => ['required', 'numeric', 'min:0'],
             'keterangan' => ['nullable', 'string', 'max:1000'],
         ]);
+
+        $periode = $validated['periode'] ?? $validated['bulan'] ?? 1;
 
         // Parse target and satuan from intermediate
         $intermediate = Intermediate::findOrFail($validated['intermediate_id']);
@@ -143,7 +163,7 @@ class CapaianController extends Controller
         $capaian = Capaian::updateOrCreate(
             [
                 'intermediate_id' => $validated['intermediate_id'],
-                'bulan' => $validated['bulan'],
+                'bulan' => $periode,
                 'tahun' => $validated['tahun'],
             ],
             [
@@ -161,6 +181,7 @@ class CapaianController extends Controller
             'data' => [
                 'id' => $capaian->id,
                 'intermediate_id' => $capaian->intermediate_id,
+                'periode' => $capaian->bulan,
                 'bulan' => $capaian->bulan,
                 'tahun' => $capaian->tahun,
                 'target' => (float) $capaian->target,
