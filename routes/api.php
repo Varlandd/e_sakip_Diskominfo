@@ -48,7 +48,15 @@ Route::get(
     '/pohon-kinerja/years',
     [PohonKinerjaController::class, 'getYears']
 );
-
+Route::get(
+    '/renstra/years', 
+    [RenstraController::class, 'getYears']);
+Route::match(
+    ['put', 'patch'], '/renstra/nodes/{level}/{id}',
+    [RenstraController::class, 'updateNode']);
+Route::delete(
+    '/renstra/nodes/{level}/{id}', 
+    [RenstraController::class, 'deleteNode']);
 Route::get(
     '/pohon-kinerja/check-year/{tahun}',
     [PohonKinerjaController::class, 'checkYearExists']
