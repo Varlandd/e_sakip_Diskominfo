@@ -250,4 +250,86 @@ class CapaianController extends Controller
             ],
         ], 200);
     }
+
+    public function quarterlySummary(Request $request)
+    {
+        $tahun = $request->query('tahun', date('Y'));
+ 
+        $pohonKinerja = PohonKinerja::where('tahun', $tahun)
+            ->where('is_archived', false)
+            ->first();
+ 
+        if (!$pohonKinerja) {
+            $emptyQuarters = collect(self::DAFTAR_PERIODE)->map(function ($meta, $periode) {
+                return [
+                    'periode' => $periode,
+                    'nama' => $meta['nama'],
+                    'singkatan' => $meta['singkatan'],
+                    'rentang' => $meta['rentang'],
+                    'rata_rata_persentase' => null,
+                    'jumlah_intermediate_terisi' => 0,
+                ];
+            })->values();
+ 
+            return response()->json([
+                'message' => 'Data pohon kinerja untuk tahun tersebut tidak ditemukan.',
+                'data' => [
+                    'tahun' => (int) $tahun,
+                    'quarters' => $emptyQuarters,
+                ],
+            ], 200);
+        }
+ 
+        $intermediates = Intermediate::whereHas('ultimate', function ($query) use ($pohonKinerja) {
+            $query->where('pohon_kinerja_id', $pohonKinerja->id);
+        })->with(['capaians' => function ($query) use ($tahun) {
+            $query->where('tahun', $tahun);
+        }])->get();
+ 
+        $quarters = [];
+ 
+        for ($periode = 1; $periode <= 4; $periode++) {
+            $meta = self::DAFTAR_PERIODE[$periode];
+            $percentages = [];
+ 
+            foreach ($intermediates as $intermediate) {
+                [$target, ] = $this->parseTargetSatuan($intermediate->target_satuan_intermediate);
+ 
+                if ($target <= 0) {
+                    continue;
+                }
+ 
+                $capaian = $intermediate->capaians->firstWhere('bulan', $periode);
+ 
+                // Triwulan ini belum diisi realisasinya untuk intermediate ini,
+                // jadi tidak ikut dihitung ke rata-rata (bukan dianggap 0%).
+                if (!$capaian) {
+                    continue;
+                }
+ 
+                $percentages[] = round(($capaian->realisasi / $target) * 100, 2);
+            }
+ 
+            $quarters[] = [
+                'periode' => $periode,
+                'nama' => $meta['nama'],
+                'singkatan' => $meta['singkatan'],
+                'rentang' => $meta['rentang'],
+                'rata_rata_persentase' => count($percentages) > 0
+                    ? round(array_sum($percentages) / count($percentages), 2)
+                    : null,
+                'jumlah_intermediate_terisi' => count($percentages),
+            ];
+        }
+ 
+        return response()->json([
+            'message' => 'Ringkasan capaian per triwulan berhasil diambil.',
+            'data' => [
+                'tahun' => (int) $tahun,
+                'unit_kerja' => $pohonKinerja->unit_kerja,
+                'total_intermediate' => $intermediates->count(),
+                'quarters' => $quarters,
+            ],
+        ], 200);
+    }
 }
