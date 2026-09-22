@@ -12,6 +12,7 @@ class Intermediate extends Model
         'ultimate_id',
         'intermediate',
         'sasaran',
+        'bidang',
         'indikator_sasaran',
         'target_satuan_intermediate',
     ];

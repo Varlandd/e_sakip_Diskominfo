@@ -29,7 +29,7 @@ class AuthController extends Controller
             ], 401);
         }
 
-        $token = $user->createToken('e-sakip-token')->plainTextToken;
+        $token = $user->createToken('e-sakip-token', [$user->role])->plainTextToken;
 
         return response()->json([
             'message' => 'Login berhasil.',
@@ -39,6 +39,7 @@ class AuthController extends Controller
                     'name' => $user->name,
                     'username' => $user->username,
                     'email' => $user->email,
+                    'role' => $user->role,
                 ],
                 'token' => $token,
             ],
@@ -71,6 +72,7 @@ class AuthController extends Controller
                 'name' => $user->name,
                 'username' => $user->username,
                 'email' => $user->email,
+                'role' => $user->role,
             ],
         ], 200);
     }

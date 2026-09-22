@@ -19,6 +19,7 @@ class Output extends Model
         'nomenklatur_sipd_sub_kegiatan_output',
         'indikator_sub_kegiatan_output',
         'target_satuan_sub_kegiatan_output',
+        'anggaran',
     ];
 
     public function immediate(): BelongsTo

@@ -24,6 +24,7 @@ return new class extends Migration
             $table->string('nomenklatur_sipd_sub_kegiatan_output');
             $table->string('indikator_sub_kegiatan_output');
             $table->string('target_satuan_sub_kegiatan_output');
+            $table->bigInteger('anggaran')->default(0);
             $table->timestamps();
         });
     }

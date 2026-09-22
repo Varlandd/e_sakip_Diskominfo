@@ -18,6 +18,7 @@ return new class extends Migration
             $table->string('sasaran');
             $table->string('indikator_sasaran');
             $table->string('target_satuan_intermediate');
+            $table->enum('bidang', ['komunikasi', 'statistik', 'persandian', 'aplikasi', 'kesekretariatan']);
             $table->timestamps();
         });
     }
