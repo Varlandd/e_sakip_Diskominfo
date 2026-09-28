@@ -181,6 +181,15 @@ class PohonKinerjaController extends Controller
                     $subKegiatanSipd = $readCell($row, ['nomenklatur_sipd_sub_kegiatan_output', 'nomenklatur sipd sub kegiatan output'], 20);
                     $subKegiatanIndicator = $readCell($row, ['indikator_sub_kegiatan_output', 'indikator sub kegiatan output'], 21);
                     $subKegiatanTarget = $readCell($row, ['target_satuan_sub_kegiatan_output', 'target satuan sub kegiatan output'], 22);
+                    $anggaranOutput = $readCell($row, ['anggaran', 'anggaran_output', 'pagu', 'pagu_anggaran', 'anggaran_sub_kegiatan', 'sub_kegiatan_anggaran'], 23);
+                    $anggaranDigits = preg_replace('/[^0-9]/', '', (string) $anggaranOutput);
+                    $anggaranVal = ($anggaranDigits !== '' && is_numeric($anggaranDigits)) ? (int) $anggaranDigits : 0;
+
+                    $bidangCell = strtolower(trim($readCell($row, ['bidang', 'bidang_intermediate'], -1)));
+                    $validBidangList = ['komunikasi', 'statistik', 'persandian', 'aplikasi', 'kesekretariatan'];
+                    if (in_array($bidangCell, $validBidangList, true)) {
+                        $currentBidang = $bidangCell;
+                    }
 
                     // Create or get Ultimate
                     if (!empty($currentUltimate)) {
@@ -207,6 +216,7 @@ class PohonKinerjaController extends Controller
                                 'ultimate_id' => $ultimateId,
                                 'intermediate' => $currentIntermediate ?? '',
                                 'sasaran' => $currentSasaran,
+                                'bidang' => $currentBidang ?? 'komunikasi',
                                 'indikator_sasaran' => $currentSasaranIndicator ?? '',
                                 'target_satuan_intermediate' => $currentIntermediateTarget ?? '',
                             ]);
@@ -248,6 +258,7 @@ class PohonKinerjaController extends Controller
                             'nomenklatur_sipd_sub_kegiatan_output' => $subKegiatanSipd,
                             'indikator_sub_kegiatan_output' => $subKegiatanIndicator,
                             'target_satuan_sub_kegiatan_output' => $subKegiatanTarget,
+                            'anggaran' => $anggaranVal,
                         ]);
                         $totalOutput++;
                     }
@@ -324,6 +335,7 @@ class PohonKinerjaController extends Controller
                             'title' => $intermediate->sasaran,
                             'indicator' => $intermediate->indikator_sasaran,
                             'level' => 'INTERMEDIATE',
+                            'bidang' => $intermediate->bidang ?? 'komunikasi',
                             'children' => $intermediate->immediates->map(function ($immediate) {
                                 return [
                                     'id' => 'immediate-' . $immediate->id,
@@ -331,12 +343,13 @@ class PohonKinerjaController extends Controller
                                     'indicator' => $immediate->indikator_immediate,
                                     'level' => 'IMMEDIATE',
                                     'children' => $immediate->outputs->map(function ($output) {
-                                        return [
-                                        'id' => 'output-' . $output->id,
-                                        'title' => $output->output,
-                                        'indicator' => $output->indikator_output,
-                                        'level' => 'OUTPUT',
-                                        ];
+                                         return [
+                                             'id' => 'output-' . $output->id,
+                                             'title' => $output->output,
+                                             'indicator' => $output->indikator_output,
+                                             'level' => 'OUTPUT',
+                                             'anggaran' => $output->anggaran ?? 0,
+                                         ];
                                     })->values()->toArray(),
                                 ];
                             })->values()->toArray(),
@@ -391,11 +404,16 @@ class PohonKinerjaController extends Controller
         $validated = $request->validate([
             'title' => ['required', 'string'],
             'indicator' => ['nullable', 'string'],
+            'bidang' => ['nullable', 'string', 'in:komunikasi,statistik,persandian,aplikasi,kesekretariatan'],
         ]);
 
         $fields = match (strtoupper($level)) {
             'ULTIMATE' => ['ultimate' => $validated['title'], 'indikator_ultimate' => $validated['indicator'] ?? null],
-            'INTERMEDIATE' => ['sasaran' => $validated['title'], 'indikator_sasaran' => $validated['indicator'] ?? null],
+            'INTERMEDIATE' => array_filter([
+                'sasaran' => $validated['title'],
+                'indikator_sasaran' => $validated['indicator'] ?? '',
+                'bidang' => $validated['bidang'] ?? null,
+            ], fn ($v) => !is_null($v)),
             'IMMEDIATE' => ['immediate' => $validated['title'], 'indikator_immediate' => $validated['indicator'] ?? null],
             'OUTPUT' => ['output' => $validated['title'], 'indikator_output' => $validated['indicator'] ?? null],
             default => null,
@@ -739,6 +757,7 @@ class PohonKinerjaController extends Controller
                             'ultimate_id' => $newUltimate->id,
                             'intermediate' => $oldIntermediate->intermediate,
                             'sasaran' => $oldIntermediate->sasaran,
+                            'bidang' => $oldIntermediate->bidang ?? 'komunikasi',
                             'indikator_sasaran' => $oldIntermediate->indikator_sasaran,
                             'target_satuan_intermediate' => $oldIntermediate->target_satuan_intermediate,
                         ]);
@@ -772,6 +791,7 @@ class PohonKinerjaController extends Controller
                                     'nomenklatur_sipd_sub_kegiatan_output' => $oldOutput->nomenklatur_sipd_sub_kegiatan_output,
                                     'indikator_sub_kegiatan_output' => $oldOutput->indikator_sub_kegiatan_output,
                                     'target_satuan_sub_kegiatan_output' => $oldOutput->target_satuan_sub_kegiatan_output,
+                                    'anggaran' => $oldOutput->anggaran ?? 0,
                                 ]);
                                 $totalOutput++;
                             }
@@ -808,16 +828,20 @@ class PohonKinerjaController extends Controller
             'level' => ['required', 'string', 'in:ULTIMATE,INTERMEDIATE,IMMEDIATE,OUTPUT'],
             'title' => ['required', 'string'],
             'indicator' => ['nullable', 'string'],
+            'bidang' => ['nullable', 'string', 'in:komunikasi,statistik,persandian,aplikasi,kesekretariatan'],
 
             // ID induk
-            'pohon_kinerja_id' => ['nullable', 'integer', 'exists:pohon_kinerja,id'],
-            'parent_id' => ['nullable', 'integer'],
+            'pohon_kinerja_id' => ['nullable', 'integer', 'exists:pohon_kinerjas,id'],
+            'parent_id' => ['nullable'],
         ]);
 
         try {
             $level = strtoupper($validated['level']);
             $title = trim($validated['title']);
             $indicator = $validated['indicator'] ?? null;
+            $rawParentId = $validated['parent_id'] ?? null;
+            $parentId = is_string($rawParentId) ? preg_replace('/^[a-z]+-/', '', $rawParentId) : $rawParentId;
+            $parentId = is_numeric($parentId) ? (int) $parentId : null;
 
             /*
             * ULTIMATE
@@ -861,17 +885,20 @@ class PohonKinerjaController extends Controller
             * Parent = Ultimate
             */
             elseif ($level === 'INTERMEDIATE') {
-                if (empty($validated['parent_id'])) {
-                    return response()->json([
-                        'message' => 'Ultimate ID wajib diisi untuk node Intermediate.'
-                    ], 422);
+                $ultimate = null;
+                if ($parentId) {
+                    $ultimate = Ultimate::find($parentId);
                 }
-
-                $ultimate = Ultimate::find($validated['parent_id']);
+                if (!$ultimate && !empty($validated['pohon_kinerja_id'])) {
+                    $ultimate = Ultimate::where('pohon_kinerja_id', $validated['pohon_kinerja_id'])->first();
+                }
+                if (!$ultimate && $parentId) {
+                    $ultimate = Ultimate::where('pohon_kinerja_id', $parentId)->first();
+                }
 
                 if (!$ultimate) {
                     return response()->json([
-                        'message' => 'Ultimate tidak ditemukan.'
+                        'message' => 'Ultimate tidak ditemukan untuk node Intermediate.'
                     ], 404);
                 }
 
@@ -885,10 +912,16 @@ class PohonKinerjaController extends Controller
                     ], 422);
                 }
 
+                $bidang = $validated['bidang'] ?? 'komunikasi';
+                if (!in_array($bidang, ['komunikasi', 'statistik', 'persandian', 'aplikasi', 'kesekretariatan'], true)) {
+                    $bidang = 'komunikasi';
+                }
+
                 $node = Intermediate::create([
                     'ultimate_id' => $ultimate->id,
                     'intermediate' => '',
                     'sasaran' => $title,
+                    'bidang' => $bidang,
                     'indikator_sasaran' => $indicator,
                     'target_satuan_intermediate' => '',
                 ]);
@@ -899,15 +932,13 @@ class PohonKinerjaController extends Controller
             * Parent = Intermediate
             */
             elseif ($level === 'IMMEDIATE') {
-                if (empty($validated['parent_id'])) {
+                if (empty($parentId)) {
                     return response()->json([
                         'message' => 'Intermediate ID wajib diisi untuk node Immediate.'
                     ], 422);
                 }
 
-                $intermediate = Intermediate::find(
-                    $validated['parent_id']
-                );
+                $intermediate = Intermediate::find($parentId);
 
                 if (!$intermediate) {
                     return response()->json([
@@ -944,15 +975,13 @@ class PohonKinerjaController extends Controller
             * Parent = Immediate
             */
             else {
-                if (empty($validated['parent_id'])) {
+                if (empty($parentId)) {
                     return response()->json([
                         'message' => 'Immediate ID wajib diisi untuk node Output.'
                     ], 422);
                 }
 
-                $immediate = Immediate::find(
-                    $validated['parent_id']
-                );
+                $immediate = Immediate::find($parentId);
 
                 if (!$immediate) {
                     return response()->json([
@@ -990,6 +1019,7 @@ class PohonKinerjaController extends Controller
                     'nomenklatur_sipd_sub_kegiatan_output' => '',
                     'indikator_sub_kegiatan_output' => '',
                     'target_satuan_sub_kegiatan_output' => '',
+                    'anggaran' => 0,
                 ]);
             }
 

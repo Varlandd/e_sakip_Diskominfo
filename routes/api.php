@@ -47,7 +47,11 @@ Route::get('/pohon-kinerja/recent-activity', [PohonKinerjaController::class, 're
 Route::post('/pohon-kinerja/node',[PohonKinerjaController::class, 'createNode']);
 Route::put('/pohon-kinerja/node/{level}/{id}',[PohonKinerjaController::class, 'updateNode']);
 
+/*
+|--------------------------------------------------------------------------
+| Renstra
+|--------------------------------------------------------------------------
+*/
 Route::get('/renstra', [RenstraController::class, 'index']);
 Route::match(['put', 'patch'], '/renstra/nodes/{level}/{id}', [RenstraController::class, 'updateNode']);
 Route::delete('/renstra/nodes/{level}/{id}', [RenstraController::class, 'deleteNode']);
-Route::delete('/pohon-kinerja/node/{level}/{id}', [PohonKinerjaController::class, 'deleteNode']);
