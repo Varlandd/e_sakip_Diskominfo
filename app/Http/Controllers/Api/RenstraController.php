@@ -16,39 +16,46 @@ class RenstraController extends Controller
      * Mengambil data Pohon Kinerja
      * dan mengubah formatnya agar sesuai dengan frontend Renstra.
      */
-    public function index(Request $request)
+        public function index(Request $request)
     {
         try {
             $tahun = $request->query('tahun');
             $unitKerja = $request->query('unit_kerja');
 
-            // Query data pohon kinerja beserta seluruh relasinya
             $query = PohonKinerja::with([
                 'ultimates.intermediates.immediates.outputs'
             ]);
 
-            // Filter berdasarkan tahun jika dikirim dari frontend
             if ($tahun) {
                 $query->where('tahun', $tahun);
             }
 
-            // Filter berdasarkan unit kerja jika dikirim dari frontend
             if ($unitKerja) {
                 $query->where('unit_kerja', $unitKerja);
             }
 
             $pohonKinerjas = $query->get();
 
-            // Jika data tidak ditemukan
             if ($pohonKinerjas->isEmpty()) {
                 return response()->json([
                     'message' => 'Data Renstra tidak ditemukan.',
+                    'archived' => false,
                     'data' => []
                 ], 404);
             }
 
+            $activeOnes = $pohonKinerjas->where('is_archived', false)->values();
+
+            if ($activeOnes->isEmpty()) {
+                return response()->json([
+                    'message' => 'Data sudah diarsipkan.',
+                    'archived' => true,
+                    'data' => [],
+                ], 200);
+            }
+
             // Mapping data sesuai struktur frontend Renstra
-            $data = $pohonKinerjas->map(function ($pohonKinerja) {
+            $data = $activeOnes->map(function ($pohonKinerja) {
 
                 return [
                     'id' => (string) $pohonKinerja->id,
@@ -152,6 +159,7 @@ class RenstraController extends Controller
 
             return response()->json([
                 'message' => 'Data Renstra berhasil diambil.',
+                'archived' => false,
                 'data' => $data,
             ], 200);
 
@@ -163,20 +171,7 @@ class RenstraController extends Controller
             ], 500);
         }
     }
-
-    /**
-     * PUT/PATCH /api/renstra/nodes/{level}/{id}
-     *
-     * Renstra TIDAK BOLEH mengubah nama/title node (itu milik Pohon Kinerja).
-     * Renstra hanya mengisi/mengubah kolom "isi" tiap level:
-     *   - ultimate      : tujuan, indicator, target
-     *   - intermediate  : sasaran, indicator, target
-     *   - immediate     : program, nomenklaturSipd, indicator, target
-     *   - output        : kegiatan, nomenklaturSipd, indicator, target, outputInput
-     *   - sub-kegiatan  : title, nomenklaturSipd, indicator, target
-     *                     (disimpan di kolom sub_kegiatan_* milik Output yang sama,
-     *                      $id di sini = id Output-nya)
-     */
+    
     public function updateNode(Request $request, string $level, int $id)
     {
         $level = strtoupper(str_replace('-', ' ', $level));
