@@ -5,6 +5,7 @@ use App\Http\Controllers\Api\AuthController;
 use App\Http\Controllers\Api\PohonKinerjaController;
 use App\Http\Controllers\Api\RenstraController;
 use App\Http\Controllers\Api\CapaianController;
+use App\Http\Controllers\Api\RealisasiAnggaranController;
 
 Route::get('/test', function () {
     return response()->json([
@@ -23,6 +24,12 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::post('/capaian', [CapaianController::class, 'store']);
     Route::get('/capaian/summary', [CapaianController::class, 'summary']);
     Route::get('/capaian/quarterly-summary', [CapaianController::class, 'quarterlySummary']);
+
+    // Realisasi Anggaran
+    Route::get('/realisasi-anggaran', [RealisasiAnggaranController::class, 'index']);
+    Route::post('/realisasi-anggaran', [RealisasiAnggaranController::class, 'store']);
+    Route::get('/realisasi-anggaran/summary', [RealisasiAnggaranController::class, 'summary']);
+
     Route::get('/renstra', [RenstraController::class, 'index']);
     Route::get('/renstra/years', [RenstraController::class, 'getYears']);
     Route::match(['put', 'patch'], '/renstra/nodes/{level}/{id}', [RenstraController::class, 'updateNode']);
