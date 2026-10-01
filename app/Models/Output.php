@@ -4,6 +4,7 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 
 class Output extends Model
 {
@@ -25,5 +26,10 @@ class Output extends Model
     public function immediate(): BelongsTo
     {
         return $this->belongsTo(Immediate::class);
+    }
+
+    public function realisasiAnggarans(): HasMany
+    {
+        return $this->hasMany(RealisasiAnggaran::class);
     }
 }

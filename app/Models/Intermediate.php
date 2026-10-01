@@ -32,3 +32,4 @@ class Intermediate extends Model
         return $this->hasMany(Capaian::class);
     }
 }
+
