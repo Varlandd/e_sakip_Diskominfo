@@ -15,15 +15,29 @@ class RenstraController extends Controller
     /**
      * Mengambil data Pohon Kinerja
      * dan mengubah formatnya agar sesuai dengan frontend Renstra.
+     *
+     * FILTER BIDANG (baru):
+     * Route ini WAJIB dilindungi middleware auth:sanctum supaya
+     * $request->user() terisi.
+     *   - role user = admin        -> semua Intermediate ditampilkan
+     *   - role user = bidang lain  -> hanya Intermediate yang kolom
+     *                                 `bidang`-nya sama dengan role
+     *                                 user itu yang ditampilkan
      */
-        public function index(Request $request)
+    public function index(Request $request)
     {
         try {
             $tahun = $request->query('tahun');
             $unitKerja = $request->query('unit_kerja');
+            $user = $request->user();
 
             $query = PohonKinerja::with([
-                'ultimates.intermediates.immediates.outputs'
+                'ultimates.intermediates' => function ($q) use ($user) {
+                    if ($user && $user->role !== 'admin') {
+                        $q->where('bidang', $user->role);
+                    }
+                },
+                'ultimates.intermediates.immediates.outputs',
             ]);
 
             if ($tahun) {
@@ -55,7 +69,7 @@ class RenstraController extends Controller
             }
 
             // Mapping data sesuai struktur frontend Renstra
-            $data = $activeOnes->map(function ($pohonKinerja) {
+            $data = $activeOnes->map(function ($pohonKinerja) use ($user) {
 
                 return [
                     'id' => (string) $pohonKinerja->id,
@@ -79,6 +93,7 @@ class RenstraController extends Controller
                                             'id' => (string) $intermediate->id,
                                             'title' => $intermediate->intermediate,
                                             'sasaran' => $intermediate->sasaran,
+                                            'bidang' => $intermediate->bidang,
                                             'indicator' => $intermediate->indikator_sasaran,
                                             'target' => $intermediate->target_satuan_intermediate,
 
@@ -120,6 +135,9 @@ class RenstraController extends Controller
                                                                     'outputInput' =>
                                                                         $output->input_output,
 
+                                                                    'anggaran' =>
+                                                                        (int) $output->anggaran,
+
                                                                     'subKegiatan' => [
                                                                         [
                                                                             'id' =>
@@ -152,6 +170,16 @@ class RenstraController extends Controller
                                     ->toArray(),
                             ];
                         })
+                        // Kalau bukan admin, Ultimate yang jadi kosong
+                        // (semua Intermediate-nya bukan bidang dia,
+                        // sudah terfilter habis di query) tidak usah
+                        // ikut ditampilkan.
+                        ->filter(function ($ultimate) use ($user) {
+                            if (!$user || $user->role === 'admin') {
+                                return true;
+                            }
+                            return count($ultimate['intermediates']) > 0;
+                        })
                         ->values()
                         ->toArray(),
                 ];
@@ -171,7 +199,22 @@ class RenstraController extends Controller
             ], 500);
         }
     }
-    
+
+    /**
+     * PUT/PATCH /api/renstra/nodes/{level}/{id}
+     *
+     * Renstra TIDAK BOLEH mengubah nama/title node atau bidang
+     * (itu milik Pohon Kinerja). Renstra hanya mengisi/mengubah
+     * kolom "isi" tiap level:
+     *   - ultimate      : tujuan, indicator, target
+     *   - intermediate  : sasaran, indicator, target
+     *   - immediate     : program, nomenklaturSipd, indicator, target
+     *   - output        : kegiatan, nomenklaturSipd, indicator, target,
+     *                      outputInput, anggaran
+     *   - sub-kegiatan  : title, nomenklaturSipd, indicator, target
+     *                     (disimpan di kolom sub_kegiatan_* milik Output
+     *                      yang sama, $id di sini = id Output-nya)
+     */
     public function updateNode(Request $request, string $level, int $id)
     {
         $level = strtoupper(str_replace('-', ' ', $level));
@@ -184,6 +227,7 @@ class RenstraController extends Controller
             'kegiatan' => ['nullable', 'string'],
             'nomenklaturSipd' => ['nullable', 'string'],
             'outputInput' => ['nullable', 'string'],
+            'anggaran' => ['nullable', 'numeric', 'min:0'],
             'indicator' => ['nullable', 'string'],
             'target' => ['nullable', 'string'],
         ]);
@@ -225,6 +269,7 @@ class RenstraController extends Controller
                     'indikator_output' => $validated['indicator'] ?? '',
                     'target_satuan_output' => $validated['target'] ?? '',
                     'input_output' => $validated['outputInput'] ?? '',
+                    'anggaran' => $validated['anggaran'] ?? 0,
                 ],
             ],
 
@@ -265,6 +310,9 @@ class RenstraController extends Controller
      * Ultimate tidak boleh dihapus dari Renstra.
      * Sub Kegiatan bukan row terpisah, jadi "hapus" = mengosongkan kolom
      * sub_kegiatan_* pada Output terkait, Output-nya sendiri tidak terhapus.
+     *
+     * (Catatan: tombol Hapus sudah dilepas dari UI Renstra, tapi endpoint
+     * ini tetap dipertahankan seperti versi asli kamu, tidak dihapus.)
      */
     public function deleteNode(string $level, int $id)
     {
