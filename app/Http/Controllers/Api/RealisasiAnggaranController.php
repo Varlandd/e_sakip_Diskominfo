@@ -23,6 +23,7 @@ class RealisasiAnggaranController extends Controller
     public function index(Request $request)
     {
         $tahun = (int) $request->query('tahun', date('Y'));
+        $user = $request->user();
 
         // Find non-archived PohonKinerja for this year
         $pohonKinerja = PohonKinerja::where('tahun', $tahun)
@@ -47,9 +48,18 @@ class RealisasiAnggaranController extends Controller
         }
 
         // Get outputs through the tree: PohonKinerja -> Ultimate -> Intermediate -> Immediate -> Output
-        $outputs = Output::whereHas('immediate.intermediate.ultimate', function ($query) use ($pohonKinerja) {
+        $outputsQuery = Output::whereHas('immediate.intermediate.ultimate', function ($query) use ($pohonKinerja) {
             $query->where('pohon_kinerja_id', $pohonKinerja->id);
-        })
+        });
+
+        // Filter by bidang if user is not admin
+        if ($user && $user->role !== 'admin') {
+            $outputsQuery->whereHas('immediate.intermediate', function ($query) use ($user) {
+                $query->where('bidang', $user->role);
+            });
+        }
+
+        $outputs = $outputsQuery
         ->with([
             'realisasiAnggarans' => function ($query) use ($tahun) {
                 $query->where('tahun', $tahun)->orderBy('periode');
@@ -195,6 +205,7 @@ class RealisasiAnggaranController extends Controller
     public function summary(Request $request)
     {
         $tahun = (int) $request->query('tahun', date('Y'));
+        $user = $request->user();
 
         $pohonKinerja = PohonKinerja::where('tahun', $tahun)
             ->where('is_archived', false)
@@ -213,9 +224,18 @@ class RealisasiAnggaranController extends Controller
             ], 200);
         }
 
-        $outputs = Output::whereHas('immediate.intermediate.ultimate', function ($query) use ($pohonKinerja) {
+        $outputsQuery = Output::whereHas('immediate.intermediate.ultimate', function ($query) use ($pohonKinerja) {
             $query->where('pohon_kinerja_id', $pohonKinerja->id);
-        })
+        });
+
+        // Filter by bidang if user is not admin
+        if ($user && $user->role !== 'admin') {
+            $outputsQuery->whereHas('immediate.intermediate', function ($query) use ($user) {
+                $query->where('bidang', $user->role);
+            });
+        }
+
+        $outputs = $outputsQuery
         ->with([
             'realisasiAnggarans' => function ($query) use ($tahun) {
                 $query->where('tahun', $tahun);
