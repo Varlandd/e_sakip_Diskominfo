@@ -46,6 +46,7 @@ class CapaianController extends Controller
     public function index(Request $request)
     {
         $tahun = $request->query('tahun', date('Y'));
+        $user = $request->user();
 
         // Find the PohonKinerja for this year
         $pohonKinerja = PohonKinerja::where('tahun', $tahun)
@@ -64,9 +65,16 @@ class CapaianController extends Controller
         }
 
         // Get intermediates through ultimate relationship
-        $intermediates = Intermediate::whereHas('ultimate', function ($query) use ($pohonKinerja) {
+        $intermediatesQuery = Intermediate::whereHas('ultimate', function ($query) use ($pohonKinerja) {
             $query->where('pohon_kinerja_id', $pohonKinerja->id);
-        })->with(['capaians' => function ($query) use ($tahun) {
+        });
+
+        // Filter by bidang if user is not admin
+        if ($user && $user->role !== 'admin') {
+            $intermediatesQuery->where('bidang', $user->role);
+        }
+
+        $intermediates = $intermediatesQuery->with(['capaians' => function ($query) use ($tahun) {
             $query->where('tahun', $tahun)->orderBy('bulan');
         }])->get();
 
@@ -199,6 +207,7 @@ class CapaianController extends Controller
     public function summary(Request $request)
     {
         $tahun = $request->query('tahun', date('Y'));
+        $user = $request->user();
 
         $pohonKinerja = PohonKinerja::where('tahun', $tahun)
             ->where('is_archived', false)
@@ -217,9 +226,16 @@ class CapaianController extends Controller
             ], 200);
         }
 
-        $intermediates = Intermediate::whereHas('ultimate', function ($query) use ($pohonKinerja) {
+        $intermediatesQuery = Intermediate::whereHas('ultimate', function ($query) use ($pohonKinerja) {
             $query->where('pohon_kinerja_id', $pohonKinerja->id);
-        })->with(['capaians' => function ($query) use ($tahun) {
+        });
+
+        // Filter by bidang if user is not admin
+        if ($user && $user->role !== 'admin') {
+            $intermediatesQuery->where('bidang', $user->role);
+        }
+
+        $intermediates = $intermediatesQuery->with(['capaians' => function ($query) use ($tahun) {
             $query->where('tahun', $tahun);
         }])->get();
 
@@ -254,6 +270,7 @@ class CapaianController extends Controller
     public function quarterlySummary(Request $request)
     {
         $tahun = $request->query('tahun', date('Y'));
+        $user = $request->user();
  
         $pohonKinerja = PohonKinerja::where('tahun', $tahun)
             ->where('is_archived', false)
@@ -280,9 +297,16 @@ class CapaianController extends Controller
             ], 200);
         }
  
-        $intermediates = Intermediate::whereHas('ultimate', function ($query) use ($pohonKinerja) {
+        $intermediatesQuery = Intermediate::whereHas('ultimate', function ($query) use ($pohonKinerja) {
             $query->where('pohon_kinerja_id', $pohonKinerja->id);
-        })->with(['capaians' => function ($query) use ($tahun) {
+        });
+
+        // Filter by bidang if user is not admin
+        if ($user && $user->role !== 'admin') {
+            $intermediatesQuery->where('bidang', $user->role);
+        }
+
+        $intermediates = $intermediatesQuery->with(['capaians' => function ($query) use ($tahun) {
             $query->where('tahun', $tahun);
         }])->get();
  
