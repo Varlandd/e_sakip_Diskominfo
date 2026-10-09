@@ -212,6 +212,18 @@ class PohonKinerjaController extends Controller
                     if (!empty($currentSasaran) && isset($ultimateId)) {
                         $intermediateKey = $ultimateId . '|' . $currentSasaran;
                         if (!isset($intermediateMap[$intermediateKey])) {
+                            $initialIndikator = !empty($currentSasaranIndicator) ? [$currentSasaranIndicator] : [];
+                            $initialTarget = [];
+                            $initialSatuan = [];
+                            if (!empty($currentIntermediateTarget)) {
+                                if (preg_match('/^([\d]+(?:[.,][\d]+)?)\s*(?:\/|\s)\s*(.*)$/', trim($currentIntermediateTarget), $m)) {
+                                    $initialTarget[] = $m[1];
+                                    $initialSatuan[] = trim($m[2]);
+                                } else {
+                                    $initialTarget[] = trim($currentIntermediateTarget);
+                                    $initialSatuan[] = '';
+                                }
+                            }
                             $intermediate = Intermediate::create([
                                 'ultimate_id' => $ultimateId,
                                 'intermediate' => $currentIntermediate ?? '',
@@ -219,9 +231,23 @@ class PohonKinerjaController extends Controller
                                 'bidang' => $currentBidang ?? 'komunikasi',
                                 'indikator_sasaran' => $currentSasaranIndicator ?? '',
                                 'target_satuan_intermediate' => $currentIntermediateTarget ?? '',
+                                'indikator' => $initialIndikator,
+                                'target' => $initialTarget,
+                                'satuan' => $initialSatuan,
                             ]);
                             $intermediateMap[$intermediateKey] = $intermediate->id;
                             $totalIntermediate++;
+                        } else {
+                            $existingId = $intermediateMap[$intermediateKey];
+                            $existingIntermediate = Intermediate::find($existingId);
+                            if ($existingIntermediate && !empty($currentSasaranIndicator)) {
+                                $currInds = $existingIntermediate->indikator;
+                                if (!in_array($currentSasaranIndicator, $currInds, true)) {
+                                    $currInds[] = $currentSasaranIndicator;
+                                    $existingIntermediate->indikator = $currInds;
+                                    $existingIntermediate->save();
+                                }
+                            }
                         }
                         $intermediateId = $intermediateMap[$intermediateKey];
                     }
@@ -330,10 +356,22 @@ class PohonKinerjaController extends Controller
                     'indicator' => $ultimate->indikator_ultimate,
                     'level' => 'ULTIMATE',
                     'children' => $ultimate->intermediates->map(function ($intermediate) {
+                        $indicators = $intermediate->indikator;
+                        if (!is_array($indicators) || empty($indicators)) {
+                            if (!empty($intermediate->indikator_sasaran)) {
+                                $lines = array_values(array_filter(array_map('trim', explode("\n", (string) $intermediate->indikator_sasaran))));
+                                $indicators = !empty($lines) ? $lines : [trim((string) $intermediate->indikator_sasaran)];
+                            } else {
+                                $indicators = [];
+                            }
+                        }
                         return [
                             'id' => 'intermediate-' . $intermediate->id,
                             'title' => $intermediate->sasaran,
-                            'indicator' => $intermediate->indikator_sasaran,
+                            'indicator' => !empty($indicators) ? implode("\n", $indicators) : ($intermediate->indikator_sasaran ?? ''),
+                            'indicators' => $indicators,
+                            'target' => $intermediate->target ?? [],
+                            'satuan' => $intermediate->satuan ?? [],
                             'level' => 'INTERMEDIATE',
                             'bidang' => $intermediate->bidang ?? 'komunikasi',
                             'children' => $intermediate->immediates->map(function ($immediate) {
@@ -403,7 +441,8 @@ class PohonKinerjaController extends Controller
         $id = (int) $id;
         $validated = $request->validate([
             'title' => ['required', 'string'],
-            'indicator' => ['nullable', 'string'],
+            'indicator' => ['nullable'],
+            'indicators' => ['nullable', 'array'],
             'bidang' => ['nullable', 'string', 'in:komunikasi,statistik,persandian,aplikasi,kesekretariatan'],
         ]);
 
@@ -411,7 +450,10 @@ class PohonKinerjaController extends Controller
             'ULTIMATE' => ['ultimate' => $validated['title'], 'indikator_ultimate' => $validated['indicator'] ?? null],
             'INTERMEDIATE' => array_filter([
                 'sasaran' => $validated['title'],
-                'indikator_sasaran' => $validated['indicator'] ?? '',
+                'indikator' => $validated['indicators'] ?? ($validated['indicator'] ?? null),
+                'indikator_sasaran' => is_array($validated['indicators'] ?? null)
+                    ? implode("\n", array_values(array_filter($validated['indicators'], fn($i) => !is_null($i) && trim((string)$i) !== '')))
+                    : (is_string($validated['indicator'] ?? null) ? $validated['indicator'] : ''),
                 'bidang' => $validated['bidang'] ?? null,
             ], fn ($v) => !is_null($v)),
             'IMMEDIATE' => ['immediate' => $validated['title'], 'indikator_immediate' => $validated['indicator'] ?? null],
@@ -760,6 +802,9 @@ class PohonKinerjaController extends Controller
                             'bidang' => $oldIntermediate->bidang ?? 'komunikasi',
                             'indikator_sasaran' => $oldIntermediate->indikator_sasaran,
                             'target_satuan_intermediate' => $oldIntermediate->target_satuan_intermediate,
+                            'indikator' => $oldIntermediate->indikator,
+                            'target' => $oldIntermediate->target,
+                            'satuan' => $oldIntermediate->satuan,
                         ]);
                         $intermediateMap[$oldIntermediate->id] = $newIntermediate->id;
                         $totalIntermediate++;
@@ -827,7 +872,8 @@ class PohonKinerjaController extends Controller
         $validated = $request->validate([
             'level' => ['required', 'string', 'in:ULTIMATE,INTERMEDIATE,IMMEDIATE,OUTPUT'],
             'title' => ['required', 'string'],
-            'indicator' => ['nullable', 'string'],
+            'indicator' => ['nullable'],
+            'indicators' => ['nullable', 'array'],
             'bidang' => ['nullable', 'string', 'in:komunikasi,statistik,persandian,aplikasi,kesekretariatan'],
 
             // ID induk
@@ -917,12 +963,25 @@ class PohonKinerjaController extends Controller
                     $bidang = 'komunikasi';
                 }
 
+                $indicators = $validated['indicators'] ?? null;
+                if (!is_array($indicators) || empty($indicators)) {
+                    $indicatorVal = $validated['indicator'] ?? null;
+                    if ($indicatorVal) {
+                        $indicators = array_values(array_filter(array_map('trim', explode("\n", (string) $indicatorVal))));
+                    } else {
+                        $indicators = ['Tambahkan indikator'];
+                    }
+                }
+
                 $node = Intermediate::create([
                     'ultimate_id' => $ultimate->id,
                     'intermediate' => '',
                     'sasaran' => $title,
                     'bidang' => $bidang,
-                    'indikator_sasaran' => $indicator,
+                    'indikator' => $indicators,
+                    'indikator_sasaran' => implode("\n", $indicators),
+                    'target' => [],
+                    'satuan' => [],
                     'target_satuan_intermediate' => '',
                 ]);
             }
