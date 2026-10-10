@@ -94,8 +94,10 @@ class RenstraController extends Controller
                                             'title' => $intermediate->intermediate,
                                             'sasaran' => $intermediate->sasaran,
                                             'bidang' => $intermediate->bidang,
-                                            'indicator' => $intermediate->indikator_sasaran,
-                                            'target' => $intermediate->target_satuan_intermediate,
+                                            // Satu Intermediate bisa punya lebih dari satu
+                                            // indikator, dan tiap indikator punya target &
+                                            // satuannya sendiri (array paralel di DB).
+                                            'indicators' => $this->buildIndicatorRows($intermediate),
 
                                             'immediates' => $intermediate->immediates
                                                 ->map(function ($immediate) {
@@ -230,6 +232,12 @@ class RenstraController extends Controller
             'anggaran' => ['nullable', 'numeric', 'min:0'],
             'indicator' => ['nullable', 'string'],
             'target' => ['nullable', 'string'],
+
+            // Khusus Intermediate: daftar indikator berpasangan target & satuan.
+            'indicators' => ['nullable', 'array'],
+            'indicators.*.indicator' => ['required', 'string'],
+            'indicators.*.target' => ['nullable', 'string'],
+            'indicators.*.satuan' => ['nullable', 'string'],
         ]);
 
         [$model, $fields] = match ($level) {
@@ -244,11 +252,7 @@ class RenstraController extends Controller
 
             'INTERMEDIATE' => [
                 Intermediate::find($id),
-                [
-                    'sasaran' => $validated['sasaran'] ?? '',
-                    'indikator_sasaran' => $validated['indicator'] ?? '',
-                    'target_satuan_intermediate' => $validated['target'] ?? '',
-                ],
+                $this->buildIntermediateFields($validated),
             ],
 
             'IMMEDIATE' => [
@@ -363,6 +367,67 @@ class RenstraController extends Controller
         return response()->json([
             'message' => 'Data beserta seluruh turunannya berhasil dihapus.',
         ]);
+    }
+
+    /**
+     * Gabungkan array paralel indikator[] / target[] / satuan[] milik
+     * Intermediate jadi daftar baris: [{indicator, target, satuan}, ...].
+     * Jumlah baris mengikuti yang terpanjang, jadi kalau target/satuan
+     * belum diisi untuk suatu indikator, barisnya tetap muncul (kosong).
+     */
+    private function buildIndicatorRows(Intermediate $intermediate): array
+    {
+        $indikator = $intermediate->indikator;
+        $target = $intermediate->target;
+        $satuan = $intermediate->satuan;
+
+        $count = max(count($indikator), count($target), count($satuan));
+        $rows = [];
+
+        for ($i = 0; $i < $count; $i++) {
+            $rows[] = [
+                'indicator' => (string) ($indikator[$i] ?? ''),
+                'target' => (string) ($target[$i] ?? ''),
+                'satuan' => (string) ($satuan[$i] ?? ''),
+            ];
+        }
+
+        return $rows;
+    }
+
+    /**
+     * Susun kolom Intermediate yang akan disimpan dari request Renstra.
+     *
+     * - indikator/target/satuan disimpan sebagai array paralel (urutannya
+     *   dijaga, tidak ada yang dibuang walau target/satuan kosong).
+     * - `target_satuan_intermediate` (kolom lama) tetap diisi dari baris
+     *   pertama, karena CapaianController masih membaca kolom itu untuk
+     *   menghitung persentase capaian.
+     * - Kalau request tidak membawa `indicators`, indikator/target yang
+     *   sudah tersimpan tidak disentuh.
+     */
+    private function buildIntermediateFields(array $validated): array
+    {
+        $fields = [
+            'sasaran' => $validated['sasaran'] ?? '',
+        ];
+
+        if (!array_key_exists('indicators', $validated)) {
+            return $fields;
+        }
+
+        $rows = array_values($validated['indicators'] ?? []);
+
+        $indikator = array_map(fn ($r) => trim((string) ($r['indicator'] ?? '')), $rows);
+        $target = array_map(fn ($r) => trim((string) ($r['target'] ?? '')), $rows);
+        $satuan = array_map(fn ($r) => trim((string) ($r['satuan'] ?? '')), $rows);
+
+        $fields['indikator'] = $indikator;
+        $fields['target'] = $target;
+        $fields['satuan'] = $satuan;
+        $fields['target_satuan_intermediate'] = trim(($target[0] ?? '') . ' ' . ($satuan[0] ?? ''));
+
+        return $fields;
     }
 
     public function getYears()
