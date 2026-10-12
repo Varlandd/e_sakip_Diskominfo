@@ -16,7 +16,8 @@ return new class extends Migration
             $table->foreignId('intermediate_id')
                   ->constrained('intermediates')
                   ->onDelete('cascade');
-            $table->unsignedTinyInteger('bulan'); // 1-12
+            $table->unsignedTinyInteger('indikator_index')->default(0); // index of indikator within intermediate
+            $table->unsignedTinyInteger('bulan'); // 1-4 (triwulan)
             $table->unsignedSmallInteger('tahun');
             $table->decimal('target', 15, 2)->default(0);
             $table->decimal('realisasi', 15, 2)->default(0);
@@ -24,7 +25,7 @@ return new class extends Migration
             $table->text('keterangan')->nullable();
             $table->timestamps();
 
-            $table->unique(['intermediate_id', 'bulan', 'tahun']);
+            $table->unique(['intermediate_id', 'indikator_index', 'bulan', 'tahun']);
         });
     }
 

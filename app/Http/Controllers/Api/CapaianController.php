@@ -42,6 +42,7 @@ class CapaianController extends Controller
 
     /**
      * Get all intermediates with their quarterly (per 3 bulan) capaian data for a given year.
+     * Each indikator within an intermediate becomes a separate row.
      */
     public function index(Request $request)
     {
@@ -78,65 +79,82 @@ class CapaianController extends Controller
             $query->where('tahun', $tahun)->orderBy('bulan');
         }])->get();
 
-        $result = $intermediates->map(function ($intermediate) use ($tahun) {
-            [$target, $satuan] = $this->parseTargetSatuan($intermediate->target_satuan_intermediate);
+        $result = [];
 
-            // Build data 4 periode (per 3 bulan)
-            $capaianMap = $intermediate->capaians->keyBy('bulan');
-            $capaianTriwulan = [];
-            $totalRealisasi = 0;
-            $filledPeriods = 0;
+        foreach ($intermediates as $intermediate) {
+            $indikators = $intermediate->indikator; // array of indikator strings
+            $targets = $intermediate->target;       // array of target values
+            $satuans = $intermediate->satuan;        // array of satuan values
 
-            for ($p = 1; $p <= 4; $p++) {
-                $meta = self::DAFTAR_PERIODE[$p];
-                if ($capaianMap->has($p)) {
-                    $c = $capaianMap[$p];
-                    $realisasi = (float) $c->realisasi;
-                    $persentase = $target > 0 ? round(($realisasi / $target) * 100, 2) : 0;
-                    $totalRealisasi += $realisasi;
-                    $filledPeriods++;
-
-                    $capaianTriwulan[] = [
-                        'periode' => $p,
-                        'bulan' => $p,
-                        'nama' => $meta['nama'],
-                        'singkatan' => $meta['singkatan'],
-                        'rentang' => $meta['rentang'],
-                        'realisasi' => $realisasi,
-                        'persentase' => $persentase,
-                        'keterangan' => $c->keterangan,
-                    ];
-                } else {
-                    $capaianTriwulan[] = [
-                        'periode' => $p,
-                        'bulan' => $p,
-                        'nama' => $meta['nama'],
-                        'singkatan' => $meta['singkatan'],
-                        'rentang' => $meta['rentang'],
-                        'realisasi' => null,
-                        'persentase' => null,
-                        'keterangan' => null,
-                    ];
-                }
+            // If no indikators in array, fall back to indikator_sasaran as single entry
+            if (empty($indikators)) {
+                $indikators = [$intermediate->getAttributes()['indikator_sasaran'] ?? ''];
             }
 
-            $rataRata = $filledPeriods > 0 && $target > 0
-                ? round(($totalRealisasi / $target) * 100, 2)
-                : 0;
+            foreach ($indikators as $idx => $indikatorName) {
+                // Get target/satuan for this specific indikator index
+                $targetVal = isset($targets[$idx]) ? (float) str_replace(',', '.', (string) $targets[$idx]) : 0;
+                $satuanVal = $satuans[$idx] ?? '';
 
-            return [
-                'id' => $intermediate->id,
-                'sasaran' => $intermediate->sasaran,
-                'indikator' => $intermediate->indikator_sasaran,
-                'target' => $target,
-                'satuan' => $satuan,
-                'target_satuan_raw' => $intermediate->target_satuan_intermediate,
-                'capaian_triwulan' => $capaianTriwulan,
-                'capaian_bulanan' => $capaianTriwulan,
-                'total_realisasi' => round($totalRealisasi, 2),
-                'rata_rata_persentase' => $rataRata,
-            ];
-        });
+                // Filter capaians for this specific indikator_index
+                $capaianForIdx = $intermediate->capaians->where('indikator_index', $idx);
+
+                // Build data 4 periode (per 3 bulan)
+                $capaianMap = $capaianForIdx->keyBy('bulan');
+                $capaianTriwulan = [];
+                $totalRealisasi = 0;
+                $filledPeriods = 0;
+
+                for ($p = 1; $p <= 4; $p++) {
+                    $meta = self::DAFTAR_PERIODE[$p];
+                    if ($capaianMap->has($p)) {
+                        $c = $capaianMap[$p];
+                        $realisasi = (float) $c->realisasi;
+                        $persentase = $targetVal > 0 ? round(($realisasi / $targetVal) * 100, 2) : 0;
+                        $totalRealisasi += $realisasi;
+                        $filledPeriods++;
+
+                        $capaianTriwulan[] = [
+                            'periode' => $p,
+                            'bulan' => $p,
+                            'nama' => $meta['nama'],
+                            'singkatan' => $meta['singkatan'],
+                            'rentang' => $meta['rentang'],
+                            'realisasi' => $realisasi,
+                            'persentase' => $persentase,
+                            'keterangan' => $c->keterangan,
+                        ];
+                    } else {
+                        $capaianTriwulan[] = [
+                            'periode' => $p,
+                            'bulan' => $p,
+                            'nama' => $meta['nama'],
+                            'singkatan' => $meta['singkatan'],
+                            'rentang' => $meta['rentang'],
+                            'realisasi' => null,
+                            'persentase' => null,
+                            'keterangan' => null,
+                        ];
+                    }
+                }
+
+                $rataRata = $filledPeriods > 0 && $targetVal > 0
+                    ? round(($totalRealisasi / $targetVal) * 100, 2)
+                    : 0;
+
+                $result[] = [
+                    'id' => $intermediate->id,
+                    'indikator_index' => $idx,
+                    'sasaran' => $intermediate->sasaran,
+                    'indikator' => $indikatorName,
+                    'target' => $targetVal,
+                    'satuan' => $satuanVal,
+                    'capaian_triwulan' => $capaianTriwulan,
+                    'total_realisasi' => round($totalRealisasi, 2),
+                    'rata_rata_persentase' => $rataRata,
+                ];
+            }
+        }
 
         return response()->json([
             'message' => 'Data capaian berhasil diambil.',
@@ -155,6 +173,7 @@ class CapaianController extends Controller
     {
         $validated = $request->validate([
             'intermediate_id' => ['required', 'integer', 'exists:intermediates,id'],
+            'indikator_index' => ['nullable', 'integer', 'min:0'],
             'periode' => ['nullable', 'integer', 'min:1', 'max:4'],
             'bulan' => ['nullable', 'integer', 'min:1', 'max:4'],
             'tahun' => ['required', 'integer', 'min:2000', 'max:2100'],
@@ -163,14 +182,19 @@ class CapaianController extends Controller
         ]);
 
         $periode = $validated['periode'] ?? $validated['bulan'] ?? 1;
+        $indikatorIndex = $validated['indikator_index'] ?? 0;
 
-        // Parse target and satuan from intermediate
+        // Get target and satuan for this specific indikator index
         $intermediate = Intermediate::findOrFail($validated['intermediate_id']);
-        [$target, $satuan] = $this->parseTargetSatuan($intermediate->target_satuan_intermediate);
+        $targets = $intermediate->target;
+        $satuans = $intermediate->satuan;
+        $target = isset($targets[$indikatorIndex]) ? (float) str_replace(',', '.', (string) $targets[$indikatorIndex]) : 0;
+        $satuan = $satuans[$indikatorIndex] ?? '';
 
         $capaian = Capaian::updateOrCreate(
             [
                 'intermediate_id' => $validated['intermediate_id'],
+                'indikator_index' => $indikatorIndex,
                 'bulan' => $periode,
                 'tahun' => $validated['tahun'],
             ],
@@ -189,6 +213,7 @@ class CapaianController extends Controller
             'data' => [
                 'id' => $capaian->id,
                 'intermediate_id' => $capaian->intermediate_id,
+                'indikator_index' => $capaian->indikator_index,
                 'periode' => $capaian->bulan,
                 'bulan' => $capaian->bulan,
                 'tahun' => $capaian->tahun,
@@ -240,17 +265,27 @@ class CapaianController extends Controller
         }])->get();
 
         $percentages = [];
+        $totalIndikator = 0;
 
         foreach ($intermediates as $intermediate) {
-            [$target, ] = $this->parseTargetSatuan($intermediate->target_satuan_intermediate);
-            if ($target <= 0) continue;
+            $indikators = $intermediate->indikator;
+            $targets = $intermediate->target;
 
-            $totalRealisasi = $intermediate->capaians->sum('realisasi');
-            $persen = round(($totalRealisasi / $target) * 100, 2);
-            $percentages[] = $persen;
+            if (empty($indikators)) {
+                $indikators = [$intermediate->getAttributes()['indikator_sasaran'] ?? ''];
+            }
+
+            foreach ($indikators as $idx => $indikatorName) {
+                $totalIndikator++;
+                $targetVal = isset($targets[$idx]) ? (float) str_replace(',', '.', (string) $targets[$idx]) : 0;
+                if ($targetVal <= 0) continue;
+
+                $totalRealisasi = $intermediate->capaians->where('indikator_index', $idx)->sum('realisasi');
+                $persen = round(($totalRealisasi / $targetVal) * 100, 2);
+                $percentages[] = $persen;
+            }
         }
 
-        $totalIntermediate = $intermediates->count();
         $rataRata = count($percentages) > 0 ? round(array_sum($percentages) / count($percentages), 2) : 0;
         $tertinggi = count($percentages) > 0 ? max($percentages) : 0;
         $terendah = count($percentages) > 0 ? min($percentages) : 0;
@@ -259,7 +294,7 @@ class CapaianController extends Controller
             'message' => 'Ringkasan capaian berhasil diambil.',
             'data' => [
                 'tahun' => (int) $tahun,
-                'total_intermediate' => $totalIntermediate,
+                'total_intermediate' => $totalIndikator,
                 'rata_rata_capaian' => $rataRata,
                 'capaian_tertinggi' => $tertinggi,
                 'capaian_terendah' => $terendah,
@@ -311,27 +346,43 @@ class CapaianController extends Controller
         }])->get();
  
         $quarters = [];
+        $totalIndikator = 0;
+
+        // Count total indikators across all intermediates
+        foreach ($intermediates as $intermediate) {
+            $inds = $intermediate->indikator;
+            $totalIndikator += max(1, count($inds));
+        }
  
         for ($periode = 1; $periode <= 4; $periode++) {
             $meta = self::DAFTAR_PERIODE[$periode];
             $percentages = [];
  
             foreach ($intermediates as $intermediate) {
-                [$target, ] = $this->parseTargetSatuan($intermediate->target_satuan_intermediate);
- 
-                if ($target <= 0) {
-                    continue;
+                $indikators = $intermediate->indikator;
+                $targets = $intermediate->target;
+
+                if (empty($indikators)) {
+                    $indikators = [$intermediate->getAttributes()['indikator_sasaran'] ?? ''];
                 }
- 
-                $capaian = $intermediate->capaians->firstWhere('bulan', $periode);
- 
-                // Triwulan ini belum diisi realisasinya untuk intermediate ini,
-                // jadi tidak ikut dihitung ke rata-rata (bukan dianggap 0%).
-                if (!$capaian) {
-                    continue;
+
+                foreach ($indikators as $idx => $indikatorName) {
+                    $targetVal = isset($targets[$idx]) ? (float) str_replace(',', '.', (string) $targets[$idx]) : 0;
+
+                    if ($targetVal <= 0) {
+                        continue;
+                    }
+
+                    $capaian = $intermediate->capaians
+                        ->where('indikator_index', $idx)
+                        ->firstWhere('bulan', $periode);
+
+                    if (!$capaian) {
+                        continue;
+                    }
+
+                    $percentages[] = round(($capaian->realisasi / $targetVal) * 100, 2);
                 }
- 
-                $percentages[] = round(($capaian->realisasi / $target) * 100, 2);
             }
  
             $quarters[] = [
@@ -351,7 +402,7 @@ class CapaianController extends Controller
             'data' => [
                 'tahun' => (int) $tahun,
                 'unit_kerja' => $pohonKinerja->unit_kerja,
-                'total_intermediate' => $intermediates->count(),
+                'total_intermediate' => $totalIndikator,
                 'quarters' => $quarters,
             ],
         ], 200);
