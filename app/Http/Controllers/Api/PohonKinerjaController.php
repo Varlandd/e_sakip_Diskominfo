@@ -245,6 +245,22 @@ class PohonKinerjaController extends Controller
                                 if (!in_array($currentSasaranIndicator, $currInds, true)) {
                                     $currInds[] = $currentSasaranIndicator;
                                     $existingIntermediate->indikator = $currInds;
+
+                                    // Also append target/satuan for this additional indikator
+                                    $currTargets = $existingIntermediate->target;
+                                    $currSatuans = $existingIntermediate->satuan;
+                                    if (!empty($currentIntermediateTarget)) {
+                                        if (preg_match('/^([\d]+(?:[.,][\d]+)?)\s*(?:\/|\s)\s*(.*)$/', trim($currentIntermediateTarget), $m)) {
+                                            $currTargets[] = $m[1];
+                                            $currSatuans[] = trim($m[2]);
+                                        } else {
+                                            $currTargets[] = trim($currentIntermediateTarget);
+                                            $currSatuans[] = '';
+                                        }
+                                    }
+                                    $existingIntermediate->target = $currTargets;
+                                    $existingIntermediate->satuan = $currSatuans;
+
                                     $existingIntermediate->save();
                                 }
                             }

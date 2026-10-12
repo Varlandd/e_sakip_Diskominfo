@@ -8,6 +8,7 @@ class Capaian extends Model
 {
     protected $fillable = [
         'intermediate_id',
+        'indikator_index',
         'bulan',
         'tahun',
         'target',
@@ -17,6 +18,7 @@ class Capaian extends Model
     ];
 
     protected $casts = [
+        'indikator_index' => 'integer',
         'bulan' => 'integer',
         'tahun' => 'integer',
         'target' => 'decimal:2',
