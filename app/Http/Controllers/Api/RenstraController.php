@@ -372,8 +372,9 @@ class RenstraController extends Controller
     /**
      * Gabungkan array paralel indikator[] / target[] / satuan[] milik
      * Intermediate jadi daftar baris: [{indicator, target, satuan}, ...].
-     * Jumlah baris mengikuti yang terpanjang, jadi kalau target/satuan
-     * belum diisi untuk suatu indikator, barisnya tetap muncul (kosong).
+     * Jumlah baris mengikuti jumlah INDIKATOR. Kalau target/satuan belum
+     * diisi untuk suatu indikator, barisnya tetap muncul (kosong). Sisa
+     * target/satuan yang tidak punya indikator tidak ditampilkan.
      */
     private function buildIndicatorRows(Intermediate $intermediate): array
     {
@@ -381,7 +382,7 @@ class RenstraController extends Controller
         $target = $intermediate->target;
         $satuan = $intermediate->satuan;
 
-        $count = max(count($indikator), count($target), count($satuan));
+        $count = count($indikator);
         $rows = [];
 
         for ($i = 0; $i < $count; $i++) {
