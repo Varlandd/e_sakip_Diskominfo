@@ -588,9 +588,14 @@ class PohonKinerjaController extends Controller
                 ->pluck('tahun')
                 ->toArray();
 
+            $activeYear = PohonKinerja::where('is_archived', false)
+                ->orderBy('tahun', 'desc')
+                ->value('tahun');
+
             return response()->json([
                 'message' => 'Tahun berhasil diambil.',
                 'data' => $years,
+                'active_year' => $activeYear ?? ($years[0] ?? (int) date('Y')),
             ], 200);
         } catch (\Throwable $e) {
             return response()->json([
