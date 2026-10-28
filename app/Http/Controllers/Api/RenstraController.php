@@ -16,7 +16,11 @@ class RenstraController extends Controller
      * Mengambil data Pohon Kinerja
      * dan mengubah formatnya agar sesuai dengan frontend Renstra.
      *
-     * FILTER BIDANG (baru):
+     * DATA ARSIP: Pohon Kinerja yang sudah diarsipkan TETAP dikembalikan
+     * (dengan flag `isArchived`), supaya Renstra tahun itu masih bisa
+     * dibuka dan diedit.
+     *
+     * FILTER BIDANG:
      * Route ini WAJIB dilindungi middleware auth:sanctum supaya
      * $request->user() terisi.
      *   - role user = admin        -> semua Intermediate ditampilkan
@@ -58,23 +62,14 @@ class RenstraController extends Controller
                 ], 404);
             }
 
-            $activeOnes = $pohonKinerjas->where('is_archived', false)->values();
-
-            if ($activeOnes->isEmpty()) {
-                return response()->json([
-                    'message' => 'Data sudah diarsipkan.',
-                    'archived' => true,
-                    'data' => [],
-                ], 200);
-            }
-
             // Mapping data sesuai struktur frontend Renstra
-            $data = $activeOnes->map(function ($pohonKinerja) use ($user) {
+            $data = $pohonKinerjas->map(function ($pohonKinerja) use ($user) {
 
                 return [
                     'id' => (string) $pohonKinerja->id,
                     'tahun' => (string) $pohonKinerja->tahun,
                     'unitKerja' => $pohonKinerja->unit_kerja,
+                    'isArchived' => (bool) $pohonKinerja->is_archived,
 
                     'ultimates' => $pohonKinerja->ultimates
                         ->map(function ($ultimate) {
@@ -185,7 +180,7 @@ class RenstraController extends Controller
                         ->values()
                         ->toArray(),
                 ];
-            });
+            })->values();
 
             return response()->json([
                 'message' => 'Data Renstra berhasil diambil.',
@@ -216,6 +211,8 @@ class RenstraController extends Controller
      *   - sub-kegiatan  : title, nomenklaturSipd, indicator, target
      *                     (disimpan di kolom sub_kegiatan_* milik Output
      *                      yang sama, $id di sini = id Output-nya)
+     *
+     * Tidak ada pengecekan arsip: data yang sudah diarsipkan tetap bisa diedit.
      */
     public function updateNode(Request $request, string $level, int $id)
     {
@@ -431,10 +428,17 @@ class RenstraController extends Controller
         return $fields;
     }
 
+    /**
+     * Daftar tahun diambil dari Pohon Kinerja (termasuk yang diarsipkan).
+     * `active_year` = tahun terbaru yang belum diarsipkan, dipakai sebagai
+     * tahun awal di Renstra supaya ngikut Pohon Kinerja. Kalau semua tahun
+     * diarsipkan, jatuh ke tahun terbaru di daftar.
+     */
     public function getYears()
     {
         try {
-            $years = PohonKinerja::distinct()
+            $years = PohonKinerja::select('tahun')
+                ->distinct()
                 ->orderBy('tahun', 'desc')
                 ->pluck('tahun')
                 ->toArray();
